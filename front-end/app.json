@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "MedReport",
+    "slug": "med-report",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "medreport",
+    "platforms": ["ios", "android", "web"],
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow MedReport to access your camera to photograph medical reports."
+        }
+      ]
+    ]
+  }
+}

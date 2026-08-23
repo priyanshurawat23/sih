@@ -1,0 +1,10 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+SQLAlchemy==2.0.31
+asyncpg==0.29.0
+pydantic==2.7.1
+python-multipart==0.0.9
+pytesseract==0.3.10
+pdf2image==1.16.3
+Pillow==10.3.0
+openai==1.30.2
