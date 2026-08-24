@@ -18,6 +18,8 @@ services:
         # Render gives a psycopg2 URL; we convert to asyncpg at app level
       - key: OPENAI_API_KEY
         sync: false   # user must set this manually in the Render dashboard
+      - key: ALLOWED_ORIGINS
+        sync: false   # set to your Vercel frontend URL, e.g. https://m-r-s.vercel.app
       - key: PYTHONUNBUFFERED
         value: "1"
 
