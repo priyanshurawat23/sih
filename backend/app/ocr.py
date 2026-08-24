@@ -38,8 +38,16 @@ def extract_text_from_file(file_path: str, content_type: str) -> str:
             images: List[Image.Image] = convert_from_path(
                 file_path, output_folder=tmpdir, fmt="png"
             )
-            texts = [_ocr_image(img) for img in images]
+            texts = []
+            for img in images:
+                try:
+                    texts.append(_ocr_image(img))
+                finally:
+                    img.close()
             return "\n\n--- Page Break ---\n\n".join(texts)
     else:
         img = Image.open(file_path)
-        return _ocr_image(img)
+        try:
+            return _ocr_image(img)
+        finally:
+            img.close()

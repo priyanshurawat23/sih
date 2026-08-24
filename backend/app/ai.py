@@ -26,10 +26,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 _client = None
 
 
-def _get_client() -> openai.OpenAI:
+def _get_client() -> openai.AsyncOpenAI:
     global _client
     if _client is None:
-        _client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        _client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
     return _client
 
 # ------------------------------------------------------------------
@@ -123,7 +123,7 @@ async def generate_summary(
 
     # Call OpenAI Chat Completions API
     try:
-        response = _get_client().chat.completions.create(
+        response = await _get_client().chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.2,
             max_tokens=2048,

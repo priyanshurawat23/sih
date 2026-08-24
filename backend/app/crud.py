@@ -73,7 +73,7 @@ async def update_report_summary(
     """Update the AI-generated summary and test values for a report."""
     values = {
         "summary": summary,
-        "has_abnormal": 1 if has_abnormal else 0,
+        "has_abnormal": has_abnormal,
     }
     if test_values is not None:
         values["test_values"] = test_values

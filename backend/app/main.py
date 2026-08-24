@@ -45,15 +45,17 @@ allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
 if allowed_origins_env and allowed_origins_env.strip() != "*":
     allowed_origins = [orig.strip() for orig in allowed_origins_env.split(",") if orig.strip()]
     allow_origin_regex = None
+    _allow_credentials = True
 else:
     allowed_origins = ["*"]
-    allow_origin_regex = r"^https?://.*"
+    allow_origin_regex = None
+    _allow_credentials = False
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_origin_regex=allow_origin_regex,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],

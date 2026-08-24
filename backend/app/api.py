@@ -55,6 +55,8 @@ ALLOWED_TYPES = {
     "image/jpg",
 }
 
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+
 
 @router.post(
     "/upload",
@@ -80,6 +82,11 @@ async def upload_report(
     temp_path = os.path.join(TMP_UPLOAD_DIR, temp_name)
 
     content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large ({len(content) // (1024*1024)} MB). Maximum allowed is {MAX_UPLOAD_BYTES // (1024*1024)} MB.",
+        )
     with open(temp_path, "wb") as f:
         f.write(content)
 

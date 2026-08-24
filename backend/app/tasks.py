@@ -3,6 +3,8 @@
 Background task that orchestrates: OCR → test-value parsing → AI summary.
 """
 
+import asyncio
+import math
 import os
 import re
 import logging
@@ -44,6 +46,9 @@ TEST_REGEX_SIMPLE = re.compile(
     re.IGNORECASE,
 )
 
+# Regex for splitting a reference range like "70-99", "13.5-17.5", "-5-5"
+_RANGE_RE = re.compile(r"^\s*(-?\d+\.?\d*)\s*[-\u2013\u2014]\s*(-?\d+\.?\d*)\s*$")
+
 
 def _normalise_range(raw_range: str) -> str:
     """Replace en-dash/em-dash with a regular hyphen."""
@@ -53,8 +58,10 @@ def _normalise_range(raw_range: str) -> str:
 def _is_value_abnormal(value: float, ref_range: str) -> bool:
     """Check whether *value* falls outside *ref_range* (e.g. '70-99')."""
     try:
-        parts = ref_range.replace(" ", "").split("-")
-        lo, hi = float(parts[0]), float(parts[1])
+        m = _RANGE_RE.match(ref_range)
+        if not m:
+            return False
+        lo, hi = float(m.group(1)), float(m.group(2))
         return value < lo or value > hi
     except Exception:
         return False
@@ -68,6 +75,8 @@ def parse_test_values(raw_text: str) -> Dict[str, Any]:
     for m in TEST_REGEX.finditer(raw_text):
         name = m.group("name").strip().lower()
         value = float(m.group("value"))
+        if not math.isfinite(value):
+            continue
         unit = m.group("unit").strip()
         ref = _normalise_range(m.group("range"))
         abnormal = _is_value_abnormal(value, ref)
@@ -84,6 +93,8 @@ def parse_test_values(raw_text: str) -> Dict[str, Any]:
         if name in results:
             continue
         value = float(m.group("value"))
+        if not math.isfinite(value):
+            continue
         unit = m.group("unit").strip()
         # Try to find a reference range from the glossary
         ref = _lookup_glossary_range(name)
@@ -119,7 +130,7 @@ async def process_report_task(
     try:
         # 1. OCR
         logger.info("OCR starting for report %s …", report_id)
-        raw_text = extract_text_from_file(file_path, content_type)
+        raw_text = await asyncio.to_thread(extract_text_from_file, file_path, content_type)
         logger.info("OCR done for report %s (%d chars)", report_id, len(raw_text))
 
         # 2. Parse test values
