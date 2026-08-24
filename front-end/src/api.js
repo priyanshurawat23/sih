@@ -3,8 +3,48 @@
 
 import { Platform } from 'react-native';
 
-const ENV_URL = typeof process !== 'undefined' && process.env && process.env.EXPO_PUBLIC_API_URL;
-export const BASE_URL = ENV_URL || 'http://localhost:8000';
+const getBaseUrl = () => {
+  if (typeof process !== 'undefined' && process.env) {
+    const envUrl =
+      process.env.EXPO_PUBLIC_API_URL ||
+      process.env.REACT_APP_API_URL ||
+      process.env.NEXT_PUBLIC_API_URL ||
+      process.env.VITE_API_URL ||
+      process.env.API_URL;
+    if (envUrl) {
+      return envUrl.replace(/\/+$/, '');
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    if (window.__ENV__ && window.__ENV__.API_URL) {
+      return window.__ENV__.API_URL.replace(/\/+$/, '');
+    }
+    try {
+      const stored = window.localStorage?.getItem('API_URL');
+      if (stored) return stored.replace(/\/+$/, '');
+    } catch (_) {}
+  }
+
+  return 'http://localhost:8000';
+};
+
+export const BASE_URL = getBaseUrl();
+
+const formatFetchError = (error, context = 'request') => {
+  console.error(`API ${context} error:`, error);
+  if (
+    error instanceof TypeError &&
+    (error.message.includes('Failed to fetch') ||
+      error.message.includes('Network') ||
+      error.message.includes('NetworkError'))
+  ) {
+    return new Error(
+      `Unable to connect to backend server at ${BASE_URL}. Ensure backend is running and CORS is enabled.`
+    );
+  }
+  return error;
+};
 
 export const uploadReport = async (fileData, fileName, fileType = 'application/pdf', language = 'en') => {
   try {
@@ -39,17 +79,22 @@ export const uploadReport = async (fileData, fileName, fileType = 'application/p
 
     if (!response.ok) {
       let errDetail = `Upload failed with status ${response.status}`;
-      try {
-        const errJson = await response.json();
-        if (errJson.detail) errDetail = errJson.detail;
-      } catch (_) {}
+      if (response.status === 413) {
+        errDetail = 'File too large. Please upload a smaller document.';
+      } else if (response.status === 502 || response.status === 503) {
+        errDetail = 'Backend service is starting up or unavailable. Please try again in a few seconds.';
+      } else {
+        try {
+          const errJson = await response.json();
+          if (errJson.detail) errDetail = errJson.detail;
+        } catch (_) {}
+      }
       throw new Error(errDetail);
     }
 
     return await response.json();
   } catch (error) {
-    console.error('API uploadReport error:', error);
-    throw error;
+    throw formatFetchError(error, 'uploadReport');
   }
 };
 
@@ -61,8 +106,7 @@ export const getHistory = async (userId = 1) => {
     }
     return await response.json();
   } catch (error) {
-    console.error('API getHistory error:', error);
-    throw error;
+    throw formatFetchError(error, 'getHistory');
   }
 };
 
@@ -74,8 +118,7 @@ export const getReport = async (reportId) => {
     }
     return await response.json();
   } catch (error) {
-    console.error('API getReport error:', error);
-    throw error;
+    throw formatFetchError(error, 'getReport');
   }
 };
 
@@ -87,7 +130,7 @@ export const getHealth = async () => {
     }
     return await response.json();
   } catch (error) {
-    console.error('API getHealth error:', error);
-    throw error;
+    throw formatFetchError(error, 'getHealth');
   }
 };
+

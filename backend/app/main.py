@@ -3,6 +3,7 @@
 FastAPI application entry point.
 """
 
+import os
 import logging
 from contextlib import asynccontextmanager
 
@@ -38,15 +39,42 @@ app = FastAPI(
 )
 
 # ------------------------------------------------------------------
-# CORS – allow all origins for development
+# CORS – allow configured or all frontend origins (e.g., Vercel, localhost)
 # ------------------------------------------------------------------
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+if allowed_origins_env and allowed_origins_env.strip() != "*":
+    allowed_origins = [orig.strip() for orig in allowed_origins_env.split(",") if orig.strip()]
+    allow_origin_regex = None
+else:
+    allowed_origins = ["*"]
+    allow_origin_regex = r"^https?://.*"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+# ------------------------------------------------------------------
+# Root & Health check
+# ------------------------------------------------------------------
+@app.get("/")
+async def root():
+    return {
+        "message": "AI Medical Report Simplifier API is running",
+        "status": "ok",
+        "docs": "/docs",
+    }
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 
 # ------------------------------------------------------------------
 # Include API routes
@@ -55,10 +83,3 @@ from .api import router as api_router  # noqa: E402
 
 app.include_router(api_router, prefix="/api")
 
-
-# ------------------------------------------------------------------
-# Health check
-# ------------------------------------------------------------------
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}

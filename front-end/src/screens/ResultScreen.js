@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { Text, Card, ActivityIndicator, Button, FAB, useTheme, Surface } from 'react-native-paper';
 import * as Speech from 'expo-speech';
-import { getHistory } from '../api';
+import { getReport } from '../api';
 
 export default function ResultScreen({ route, navigation }) {
   const { reportId } = route.params;
@@ -15,29 +15,38 @@ export default function ResultScreen({ route, navigation }) {
 
   useEffect(() => {
     let attempt = 0;
-    const maxAttempts = 10;
+    const maxAttempts = 15;
     let timeoutId;
 
     const pollReport = async () => {
       try {
-        const historyData = await getHistory(1);
-        const foundReport = historyData.reports.find(r => r.id === reportId);
+        const foundReport = await getReport(reportId);
         
-        if (foundReport && foundReport.summary) {
-          setReport(foundReport);
-          setLoading(false);
+        if (foundReport && foundReport.summary && foundReport.summary !== 'Processing…') {
+          if (foundReport.summary.startsWith('Error:')) {
+            setLoading(false);
+            setError(foundReport.summary);
+          } else {
+            setReport(foundReport);
+            setLoading(false);
+          }
         } else {
           attempt++;
           if (attempt >= maxAttempts) {
             setLoading(false);
-            setError('Failed to process report summary in time. Please check History later.');
+            setError('Report analysis is taking longer than expected. You can check the History tab to view results once ready.');
           } else {
             timeoutId = setTimeout(pollReport, 3000);
           }
         }
       } catch (err) {
-        setLoading(false);
-        setError('Error fetching report data.');
+        attempt++;
+        if (attempt >= maxAttempts) {
+          setLoading(false);
+          setError(err.message || 'Error fetching report data.');
+        } else {
+          timeoutId = setTimeout(pollReport, 3000);
+        }
       }
     };
 
