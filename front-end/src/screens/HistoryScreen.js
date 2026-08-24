@@ -7,14 +7,15 @@ export default function HistoryScreen({ navigation }) {
   const theme = useTheme();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchHistory = async () => {
       try {
         const data = await getHistory(1);
         setReports(data.reports || []);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to load history.');
+      } catch (err) {
+        setError('Failed to load history.');
       } finally {
         setLoading(false);
       }
@@ -84,6 +85,19 @@ export default function HistoryScreen({ navigation }) {
     return (
       <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.centerContainer, { backgroundColor: theme.colors.background }]}>
+        <Text style={{ color: theme.colors.error, marginBottom: 16 }}>{error}</Text>
+        <Card.Actions>
+          <Text style={{ color: theme.colors.primary, textDecorationLine: 'underline' }} onPress={() => navigation.navigate('Upload')}>
+            Back to Upload
+          </Text>
+        </Card.Actions>
       </View>
     );
   }
