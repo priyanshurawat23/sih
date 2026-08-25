@@ -1,15 +1,29 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Alert, Platform } from 'react-native';
-import { Button, Text, Surface, ActivityIndicator, useTheme, Snackbar } from 'react-native-paper';
+import { View, StyleSheet, Alert, Platform, ScrollView } from 'react-native';
+import { Button, Text, Surface, ActivityIndicator, useTheme, Snackbar, Icon, Chip, Card } from 'react-native-paper';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadReport } from '../api';
+
+const LANGUAGES = [
+  { code: 'en', label: '🇬🇧 English', native: 'English' },
+  { code: 'hi', label: 'हिन्दी', native: 'Hindi' },
+  { code: 'ta', label: 'தமிழ்', native: 'Tamil' },
+  { code: 'te', label: 'తెలుగు', native: 'Telugu' },
+  { code: 'bn', label: 'বাংলা', native: 'Bengali' },
+  { code: 'mr', label: 'मराठी', native: 'Marathi' },
+  { code: 'gu', label: 'ગુજરાતી', native: 'Gujarati' },
+  { code: 'kn', label: 'ಕನ್ನಡ', native: 'Kannada' },
+  { code: 'ml', label: 'മലയാളം', native: 'Malayalam' },
+  { code: 'pa', label: 'ਪੰਜਾਬੀ', native: 'Punjabi' },
+];
 
 export default function UploadScreen({ navigation }) {
   const theme = useTheme();
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [errorVisible, setErrorVisible] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('en');
 
   const showError = (msg) => {
     setErrorMessage(msg);
@@ -123,7 +137,7 @@ export default function UploadScreen({ navigation }) {
   const processUpload = async (fileOrUri, name, type) => {
     setLoading(true);
     try {
-      const response = await uploadReport(fileOrUri, name, type);
+      const response = await uploadReport(fileOrUri, name, type, selectedLanguage);
       if (response && response.report_id) {
         navigation.navigate('Result', { reportId: response.report_id });
       } else {
@@ -137,54 +151,96 @@ export default function UploadScreen({ navigation }) {
   };
 
   return (
-    <Surface style={styles.container}>
-      <View style={styles.headerContainer}>
-        <Text variant="headlineMedium" style={[styles.title, { color: theme.colors.primary }]}>
-          AI Medical Report Simplifier
-        </Text>
-        <Text variant="bodyLarge" style={styles.subtitle}>
-          Upload your medical reports for a simple, plain-language summary.
-        </Text>
-      </View>
-
-      <View style={styles.actionContainer}>
-        {loading ? (
-          <View style={styles.loadingWrapper}>
-            <ActivityIndicator animating={true} size="large" color={theme.colors.primary} style={styles.loader} />
-            <Text style={styles.loadingText}>Uploading and analyzing report...</Text>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* Header Section */}
+        <Surface style={styles.headerSurface} elevation={2}>
+          <View style={styles.iconWrapper}>
+            <Icon source="medical-bag" size={48} color={theme.colors.primary} />
           </View>
-        ) : (
-          <>
-            <Button
-              mode="contained"
-              icon="file-pdf-box"
-              onPress={handleUploadPDF}
-              style={styles.mainButton}
-              contentStyle={styles.buttonContent}
-            >
-              Upload PDF
-            </Button>
-            <Button
-              mode="contained-tonal"
-              icon="camera"
-              onPress={handleTakePhoto}
-              style={styles.mainButton}
-              contentStyle={styles.buttonContent}
-            >
-              Take Photo
-            </Button>
-          </>
-        )}
-      </View>
+          <Text variant="headlineMedium" style={[styles.title, { color: theme.colors.primary }]}>
+            AI Medical Report Simplifier
+          </Text>
+          <Text variant="bodyLarge" style={styles.subtitle}>
+            Upload your medical reports for a simple, plain-language summary
+          </Text>
+        </Surface>
 
-      <Button
-        mode="text"
-        icon="history"
-        onPress={() => navigation.navigate('History')}
-        style={styles.historyButton}
-      >
-        View History
-      </Button>
+        {/* Language Selector Section */}
+        <View style={styles.sectionContainer}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
+            Select Report Language
+          </Text>
+          <View style={styles.chipContainer}>
+            {LANGUAGES.map((lang) => (
+              <Chip
+                key={lang.code}
+                selected={selectedLanguage === lang.code}
+                onPress={() => setSelectedLanguage(lang.code)}
+                style={[
+                  styles.chip,
+                  selectedLanguage === lang.code && { backgroundColor: theme.colors.primary }
+                ]}
+                textStyle={selectedLanguage === lang.code ? { color: '#FFF' } : {}}
+                showSelectedOverlay
+              >
+                {lang.label}
+              </Chip>
+            ))}
+          </View>
+        </View>
+
+        {/* Upload Buttons Section */}
+        <View style={styles.uploadContainer}>
+          {loading ? (
+            <Card style={styles.loadingCard}>
+              <Card.Content style={styles.loadingWrapper}>
+                <ActivityIndicator animating={true} size="large" color={theme.colors.primary} />
+                <Text style={styles.loadingText}>Analyzing your report...</Text>
+              </Card.Content>
+            </Card>
+          ) : (
+            <View style={styles.actionContainer}>
+              <Button
+                mode="contained"
+                icon="file-pdf-box"
+                onPress={handleUploadPDF}
+                style={styles.mainButton}
+                contentStyle={styles.buttonContent}
+                buttonColor={theme.colors.primary}
+              >
+                Upload PDF
+              </Button>
+              <Button
+                mode="contained-tonal"
+                icon="camera"
+                onPress={handleTakePhoto}
+                style={styles.secondaryButton}
+                contentStyle={styles.buttonContent}
+              >
+                Upload Image
+              </Button>
+            </View>
+          )}
+        </View>
+
+        {/* Bottom Section */}
+        <View style={styles.bottomSection}>
+          <Button
+            mode="text"
+            icon="history"
+            onPress={() => navigation.navigate('History')}
+            style={styles.historyButton}
+            textColor={theme.colors.primary}
+          >
+            View History
+          </Button>
+          <View style={styles.statusIndicator}>
+            <View style={[styles.statusDot, { backgroundColor: theme.colors.success }]} />
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurface, opacity: 0.6 }}>Connected</Text>
+          </View>
+        </View>
+      </ScrollView>
 
       <Snackbar
         visible={errorVisible}
@@ -198,53 +254,107 @@ export default function UploadScreen({ navigation }) {
       >
         <Text style={{ color: '#fff' }}>{errorMessage}</Text>
       </Snackbar>
-    </Surface>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    justifyContent: 'space-between',
   },
-  headerContainer: {
-    marginTop: 40,
+  scrollContent: {
+    flexGrow: 1,
+    padding: 16,
+    paddingBottom: 40,
+  },
+  headerSurface: {
+    padding: 24,
+    borderRadius: 20,
     alignItems: 'center',
+    marginBottom: 24,
+    marginTop: 20,
+    backgroundColor: 'rgba(108, 99, 255, 0.05)',
+  },
+  iconWrapper: {
+    marginBottom: 16,
+    padding: 16,
+    borderRadius: 40,
+    backgroundColor: 'rgba(108, 99, 255, 0.1)',
   },
   title: {
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   subtitle: {
     textAlign: 'center',
-    opacity: 0.8,
+    opacity: 0.7,
+    lineHeight: 24,
   },
-  actionContainer: {
+  sectionContainer: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontWeight: '600',
+    marginBottom: 12,
+    paddingHorizontal: 8,
+  },
+  chipContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  chip: {
+    marginBottom: 8,
+  },
+  uploadContainer: {
     flex: 1,
     justifyContent: 'center',
+    minHeight: 180,
+  },
+  actionContainer: {
+    gap: 16,
   },
   mainButton: {
-    marginVertical: 10,
-    borderRadius: 8,
+    borderRadius: 12,
+  },
+  secondaryButton: {
+    borderRadius: 12,
   },
   buttonContent: {
-    paddingVertical: 8,
+    paddingVertical: 12,
+    height: 56,
   },
-  historyButton: {
-    marginBottom: 20,
-  },
-  loader: {
-    marginVertical: 20,
+  loadingCard: {
+    borderRadius: 16,
+    elevation: 2,
   },
   loadingWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 32,
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 15,
-    opacity: 0.8,
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  bottomSection: {
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  historyButton: {
+    marginBottom: 16,
+  },
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
 });

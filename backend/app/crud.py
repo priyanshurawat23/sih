@@ -69,14 +69,22 @@ async def update_report_summary(
     summary: str,
     test_values: Optional[dict] = None,
     has_abnormal: bool = False,
+    doctor_advice: Optional[dict] = None,
+    risk_level: Optional[str] = None,
+    language: str = 'en',
 ) -> None:
     """Update the AI-generated summary and test values for a report."""
     values = {
         "summary": summary,
         "has_abnormal": has_abnormal,
+        "language": language,
     }
     if test_values is not None:
         values["test_values"] = test_values
+    if doctor_advice is not None:
+        values["doctor_advice"] = doctor_advice
+    if risk_level is not None:
+        values["risk_level"] = risk_level
 
     stmt = (
         update(models.Report)

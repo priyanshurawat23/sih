@@ -24,3 +24,6 @@ class Report(Base):
     test_values = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
     has_abnormal = Column(Boolean, default=False)
+    doctor_advice = Column(JSON, nullable=True)
+    risk_level = Column(String(20), nullable=True)
+    language = Column(String(10), default='en')

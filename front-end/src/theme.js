@@ -16,5 +16,16 @@ export const theme = {
     text: '#FFFFFF',
     accent: '#FF6584',
     error: '#FF6584',
+    success: '#4CAF50',
+    warning: '#FFC107',
+    danger: '#F44336',
+    gradientStart: '#6C63FF',
+    gradientEnd: '#FF6584',
   },
+  typography: {
+    h1: { fontSize: 24, fontWeight: 'bold' },
+    h2: { fontSize: 20, fontWeight: 'bold' },
+    body: { fontSize: 16 },
+    caption: { fontSize: 12, color: '#A0A0A0' }
+  }
 };

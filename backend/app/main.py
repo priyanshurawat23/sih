@@ -6,6 +6,15 @@ FastAPI application entry point.
 import os
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+# Load .env file automatically (works for local dev)
+try:
+    from dotenv import load_dotenv
+    _env_path = Path(__file__).parent.parent / ".env"
+    load_dotenv(dotenv_path=_env_path)
+except ImportError:
+    pass
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -85,3 +94,5 @@ from .api import router as api_router  # noqa: E402
 
 app.include_router(api_router, prefix="/api")
 
+
+# Trigger reload

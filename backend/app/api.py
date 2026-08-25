@@ -66,7 +66,7 @@ MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 async def upload_report(
     background: BackgroundTasks,
     file: UploadFile = File(...),
-    language: str = Query("en", description="Output language: 'en' or 'hi'"),
+    language: str = Query("en", description="Output language: en, hi, ta, te, bn, mr, gu, kn, ml, pa"),
     db: AsyncSession = Depends(get_db),
     user: models.User = Depends(get_demo_user),
 ):
@@ -147,3 +147,42 @@ async def get_history(
 ):
     reports = await crud.get_reports_by_user(db, user_id)
     return schemas.HistoryResponse(user_id=user_id, reports=reports)
+
+# ------------------------------------------------------------------
+# GET /report/{report_id}/audio - generate and stream TTS
+# ------------------------------------------------------------------
+from fastapi.responses import FileResponse
+from .tts import get_audio_for_report
+import json
+
+@router.get(
+    "/report/{report_id}/audio",
+    status_code=status.HTTP_200_OK,
+)
+async def get_report_audio(
+    report_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import select
+    result = await db.execute(
+        select(models.Report).where(models.Report.id == report_id)
+    )
+    report = result.scalars().first()
+    if not report or not report.summary:
+        raise HTTPException(status_code=404, detail="Report or summary not found")
+
+    text_to_speak = report.summary
+    try:
+        if "{" in report.summary and "}" in report.summary:
+            parsed = json.loads(report.summary)
+            if "summary" in parsed:
+                text_to_speak = parsed["summary"]
+    except Exception:
+        pass
+
+    try:
+        audio_path = get_audio_for_report(report_id, text_to_speak)
+        return FileResponse(audio_path, media_type="audio/mpeg")
+    except Exception as e:
+        logger.error(f"TTS Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate audio")

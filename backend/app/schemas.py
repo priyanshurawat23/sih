@@ -23,6 +23,9 @@ class ReportOut(BaseModel):
     test_values: Optional[Dict[str, Any]] = None
     created_at: datetime
     has_abnormal: bool
+    doctor_advice: Optional[Dict[str, Any]] = None
+    risk_level: Optional[str] = None
+    language: str = 'en'
 
     model_config = {"from_attributes": True}
 

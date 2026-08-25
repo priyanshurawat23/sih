@@ -40,3 +40,16 @@ pgdata/
 # Old project dirs (not part of this repo)
 Medical-Test-Report-Analyzer/
 medical-report-simplifier/
+
+# Database
+*.db
+*.sqlite3
+
+# Temporary and Test files
+test_*.py
+output.txt
+drop_tables.py
+dummy.pdf
+start_app.bat
+audio_cache/
+venv/

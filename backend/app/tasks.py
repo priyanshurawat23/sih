@@ -153,12 +153,33 @@ async def process_report_task(
             )
 
         # 4. AI summary (calls OpenAI)
-        await ai.generate_summary(
+        ai_res = await ai.generate_summary(
             report_id=report_id,
             raw_text=raw_text,
             test_values=test_vals,
             language=language,
         )
+        
+        # 5. Persist the AI summary and extra fields
+        async with AsyncSessionLocal() as db:
+            
+            # Optionally append recommendations to the summary or store them if we had a recommendations column
+            # Since there is no recommendations column explicitly asked for, we will append to the summary
+            final_summary = ai_res.get("summary", "")
+            recommendations = ai_res.get("recommendations")
+            if recommendations and isinstance(recommendations, list):
+                final_summary += "\n\nRecommendations:\n- " + "\n- ".join(recommendations)
+                
+            await crud.update_report_summary(
+                db=db,
+                report_id=report_id,
+                summary=final_summary,
+                test_values=test_vals,
+                has_abnormal=any(v.get("abnormal") for v in test_vals.values()),
+                doctor_advice=ai_res.get("doctor_advice"),
+                risk_level=ai_res.get("risk_level"),
+                language=language,
+            )
 
     except Exception:
         logger.exception("Failed to process report %s", report_id)

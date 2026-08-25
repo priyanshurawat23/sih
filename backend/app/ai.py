@@ -1,8 +1,12 @@
 # backend/app/ai.py
 """
-AI Simplifier & RAG Pipeline.
+AI Simplifier & RAG Pipeline — Multi-Provider with Auto-Fallback.
 
-Uses the OpenAI API directly (via the `openai` Python SDK) for reliability.
+Provider priority (auto-switches when credits exhausted / rate-limited):
+  1. Google Gemini (via OpenAI-compatible endpoint)
+  2. Groq            (via OpenAI-compatible endpoint)
+  3. OpenRouter      (via OpenAI-compatible endpoint)
+
 The medical glossary is loaded from a JSON file and included as context in
 the prompt so the LLM can cross-reference test definitions and ranges.
 """
@@ -10,7 +14,8 @@ the prompt so the LLM can cross-reference test definitions and ranges.
 import os
 import json
 import logging
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any, List, Tuple
 
 import openai
 
@@ -20,20 +25,78 @@ from .database import AsyncSessionLocal
 logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------
-# OpenAI client  (lazy – so the module can be imported without a key)
+# Provider Configuration — ordered by priority
+# Each entry: (name, base_url, api_key_env_var, model)
 # ------------------------------------------------------------------
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-_client = None
+PROVIDERS: List[Tuple[str, str, str, str]] = [
+    (
+        "Groq (Qwen)",
+        "https://api.groq.com/openai/v1",
+        "GROQ_API_KEY",
+        "qwen/qwen3.6-27b",
+    ),
+    (
+        "Groq (Whisper/Fallback)",
+        "https://api.groq.com/openai/v1",
+        "GROQ_API_KEY",
+        "openai/gpt-oss-120b",
+    ),
+    (
+        "OpenRouter (Gemma 31B)",
+        "https://openrouter.ai/api/v1",
+        "OPENROUTER_API_KEY",
+        "google/gemma-4-31b-it:free",
+    ),
+    (
+        "OpenRouter (Nemotron)",
+        "https://openrouter.ai/api/v1",
+        "OPENROUTER_API_KEY",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+    ),
+    (
+        "OpenRouter (Gemma 26B)",
+        "https://openrouter.ai/api/v1",
+        "OPENROUTER_API_KEY",
+        "google/gemma-4-26b-a4b-it:free",
+    ),
+    (
+        "OpenRouter (Auto Router)",
+        "https://openrouter.ai/api/v1",
+        "OPENROUTER_API_KEY",
+        "openrouter/free",
+    ),
+]
+
+# Errors that indicate we should fall back to the next provider
+_FALLBACK_ERRORS = (
+    "rate_limit",
+    "quota",
+    "insufficient_quota",
+    "billing",
+    "limit exceeded",
+    "too many requests",
+    "429",
+    "402",
+    "403",
+    "credits",
+    "resource_exhausted",
+)
 
 
-def _get_client() -> openai.AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = openai.AsyncOpenAI(
-            api_key=OPENAI_API_KEY,
-            timeout=60.0,  # 60 second timeout to prevent indefinite hanging
-        )
-    return _client
+def _should_fallback(exc: Exception) -> bool:
+    """Return True if the error warrants trying the next provider."""
+    msg = str(exc).lower()
+    return any(trigger in msg for trigger in _FALLBACK_ERRORS)
+
+
+def _build_client(base_url: str, api_key: str) -> openai.AsyncOpenAI:
+    """Create an OpenAI-compatible async client for any provider."""
+    return openai.AsyncOpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=60.0,
+    )
+
 
 # ------------------------------------------------------------------
 # Load medical glossary
@@ -75,12 +138,31 @@ GLOSSARY_TEXT = _glossary_context()
 SYSTEM_PROMPT = """You are a medical report simplifier designed to help patients understand their lab reports.
 
 RULES – follow every one strictly:
-1. Translate medical jargon into plain, simple language (1-2 short sentences per test).
+1. Translate medical jargon into plain, simple language. Explain each test in 3-4 simple sentences.
 2. For each test value, compare it against the safe reference range provided in the glossary below.
-3. If a value is OUTSIDE the safe range, clearly mark it as **ABNORMAL** and append: "⚠️ Please consult your doctor about this result."
-4. NEVER provide a medical diagnosis or treatment advice.
-5. Always end your response with: "Disclaimer: This is a simplified summary for informational purposes only. Please consult a qualified healthcare professional for medical advice."
-6. If the requested language is Hindi, translate the ENTIRE output to Hindi (Devanagari script). If another regional language is requested, translate accordingly.
+3. If a value is OUTSIDE the safe range, explain WHY it matters and what it could indicate. Clearly mark it as **ABNORMAL**.
+4. ALWAYS recommend a specialist doctor type based on abnormal values.
+5. Provide a full specialist description (what they do, what conditions they treat).
+6. Give urgency level (ROUTINE, SOON, or URGENT).
+7. Give 3-5 actionable health recommendations.
+8. NEVER provide a medical diagnosis or treatment advice. End with a disclaimer in the chosen language.
+9. Support the following languages with proper instructions: en (English), hi (Hindi/Devanagari), ta (Tamil), te (Telugu), bn (Bengali), mr (Marathi), gu (Gujarati), kn (Kannada), ml (Malayalam), pa (Punjabi). Translate the ENTIRE output to the requested language.
+10. Output MUST be valid JSON matching this exact structure:
+
+{{
+  "summary": "Detailed plain-language summary of the report (3-4 sentences per test)",
+  "risk_level": "LOW" | "MODERATE" | "HIGH",
+  "doctor_advice": {{
+    "specialist_type": "Cardiologist",
+    "reason": "Your cholesterol levels are above normal range...",
+    "urgency": "ROUTINE" | "SOON" | "URGENT",
+    "description": "A cardiologist specializes in heart and blood vessel conditions..."
+  }},
+  "recommendations": [
+    "Reduce sugar intake",
+    "Exercise 30 minutes daily"
+  ]
+}}
 
 MEDICAL GLOSSARY (use these reference ranges):
 {glossary}
@@ -104,55 +186,105 @@ def format_test_values(test_vals: Dict[str, Any]) -> str:
 
 
 # ------------------------------------------------------------------
-# Main entry point – called from background task after OCR
+# Core: call LLM with automatic provider fallback
 # ------------------------------------------------------------------
-async def generate_summary(
-    report_id: int,
-    raw_text: str,
-    test_values: Dict[str, Any],
-    language: str = "en",
-) -> None:
-    """Call the LLM to produce a plain-language summary, then store it in the DB."""
+async def _call_llm_with_fallback(messages: List[Dict[str, str]]) -> Dict[str, Any]:
+    """
+    Try each provider in priority order.
+    Falls back automatically when a provider fails, is rate-limited, or outputs invalid JSON.
+    Returns the parsed JSON dict or raises if all fail.
+    """
+    last_exc = None
 
-    lang_label = "Hindi (Devanagari)" if language == "hi" else "English"
+    for provider_name, base_url, key_env, model in PROVIDERS:
+        api_key = os.getenv(key_env, "").strip()
+        if not api_key:
+            logger.warning("[AI Fallback] Skipping %s — no API key set (%s).", provider_name, key_env)
+            continue
+
+        logger.info("[AI Fallback] Trying provider: %s (model: %s)", provider_name, model)
+        client = _build_client(base_url, api_key)
+
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                temperature=0.2,
+                max_tokens=4096,
+                messages=messages,
+            )
+            content = response.choices[0].message.content
+            if content is None:
+                raise ValueError("Model returned None content")
+            response_text = content.strip()
+
+            # Parse JSON
+            match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', response_text, re.DOTALL | re.IGNORECASE)
+            if match:
+                clean_json = match.group(1)
+            else:
+                # Fallback: remove think tags and just find the outer braces
+                response_text = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL | re.IGNORECASE)
+                start_idx = response_text.find('{')
+                end_idx = response_text.rfind('}')
+                if start_idx != -1 and end_idx != -1:
+                    clean_json = response_text[start_idx:end_idx+1]
+                else:
+                    clean_json = response_text
+
+            parsed = json.loads(clean_json)
+
+            logger.info("[AI Fallback] Success with provider: %s", provider_name)
+            return parsed
+
+        except Exception as exc:
+            logger.warning("[AI Fallback] Provider %s failed: %s", provider_name, exc)
+            last_exc = exc
+            continue
+
+    raise last_exc or Exception("All AI providers failed.")
+
+
+async def generate_summary(
+    report_id: int, raw_text: str, test_values: Dict[str, Any], language: str = "en"
+) -> Dict[str, Any]:
+    """
+    Use an LLM (with fallback) to simplify the report, assign a risk level,
+    and suggest medical advice.
+    """
+    lang_map = {
+        "en": "English", "hi": "Hindi", "ta": "Tamil", "te": "Telugu",
+        "bn": "Bengali", "mr": "Marathi", "gu": "Gujarati", "kn": "Kannada",
+        "ml": "Malayalam", "pa": "Punjabi"
+    }
+    lang_label = lang_map.get(language, "English")
     test_section = format_test_values(test_values)
 
-    user_message = (
-        f"Here is a patient's medical lab report (raw OCR text):\n"
-        f"---\n{raw_text}\n---\n\n"
-        f"Extracted test values:\n{test_section}\n\n"
-        f"Please simplify this report in {lang_label}."
-    )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Here is a patient's medical lab report (raw OCR text):\n"
+                f"---\n{raw_text}\n---\n\n"
+                f"Extracted test values:\n{test_section}\n\n"
+                f"Please provide the structured JSON response in {lang_label}. Ensure the output is valid JSON only."
+            ),
+        },
+    ]
 
-    # Call OpenAI Chat Completions API
     try:
-        response = await _get_client().chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.2,
-            max_tokens=2048,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-        )
-        summary = response.choices[0].message.content.strip()
-    except Exception as exc:
-        logger.error("OpenAI API call failed for report %s: [%s] %s", report_id, type(exc).__name__, exc)
-        summary = (
-            "Error: We were unable to generate a simplified summary at this time. "
-            "Please try again later or consult your healthcare provider directly."
-        )
-
-    # Detect abnormal flags
-    has_abnormal = "ABNORMAL" in summary.upper() or "\u26a0" in summary
-
-    # Persist to DB
-    async with AsyncSessionLocal() as db:
-        await crud.update_report_summary(
-            db=db,
-            report_id=report_id,
-            summary=summary,
-            test_values=test_values,
-            has_abnormal=has_abnormal,
-        )
-    logger.info("Summary generated for report %s (abnormal=%s)", report_id, has_abnormal)
+        parsed_json = await _call_llm_with_fallback(messages)
+        logger.info("Summary generated successfully for report %s", report_id)
+        return parsed_json
+    except Exception as e:
+        logger.error("Failed to generate/parse AI summary for report %s: %s", report_id, e)
+        return {
+            "summary": (
+                "Error: We were unable to generate a simplified summary at this time. "
+                "Please try again later or consult your healthcare provider directly."
+            ),
+            "risk_level": "MODERATE",
+            "doctor_advice": None,
+            "recommendations": []
+        }
+import re
