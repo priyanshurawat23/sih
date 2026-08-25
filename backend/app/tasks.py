@@ -130,7 +130,11 @@ async def process_report_task(
     try:
         # 1. OCR
         logger.info("OCR starting for report %s …", report_id)
-        raw_text = await asyncio.to_thread(extract_text_from_file, file_path, content_type)
+        # 60 second timeout for OCR to prevent infinite hangs
+        raw_text = await asyncio.wait_for(
+            asyncio.to_thread(extract_text_from_file, file_path, content_type),
+            timeout=60.0
+        )
         logger.info("OCR done for report %s (%d chars)", report_id, len(raw_text))
 
         # 2. Parse test values

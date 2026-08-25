@@ -35,13 +35,17 @@ def extract_text_from_file(file_path: str, content_type: str) -> str:
             return "[ERROR: pdf2image not available]"
 
         with tempfile.TemporaryDirectory() as tmpdir:
+            # Lower DPI to 150 (default is 200) to save RAM and prevent OOM kills
             image_paths = convert_from_path(
-                file_path, output_folder=tmpdir, fmt="png", paths_only=True
+                file_path, output_folder=tmpdir, fmt="png", paths_only=True, dpi=150
             )
             texts = []
             for img_path in image_paths:
                 img = Image.open(img_path)
                 try:
+                    # Resize if extremely large to save RAM during Tesseract
+                    if img.width > 2000 or img.height > 2000:
+                        img.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
                     texts.append(_ocr_image(img))
                 finally:
                     img.close()
@@ -49,6 +53,9 @@ def extract_text_from_file(file_path: str, content_type: str) -> str:
     else:
         img = Image.open(file_path)
         try:
+            # Resize if extremely large to save RAM during Tesseract
+            if img.width > 2000 or img.height > 2000:
+                img.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
             return _ocr_image(img)
         finally:
             img.close()
