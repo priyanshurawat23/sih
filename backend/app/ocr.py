@@ -35,11 +35,12 @@ def extract_text_from_file(file_path: str, content_type: str) -> str:
             return "[ERROR: pdf2image not available]"
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            images: List[Image.Image] = convert_from_path(
-                file_path, output_folder=tmpdir, fmt="png"
+            image_paths = convert_from_path(
+                file_path, output_folder=tmpdir, fmt="png", paths_only=True
             )
             texts = []
-            for img in images:
+            for img_path in image_paths:
+                img = Image.open(img_path)
                 try:
                     texts.append(_ocr_image(img))
                 finally:

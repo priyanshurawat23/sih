@@ -29,7 +29,10 @@ _client = None
 def _get_client() -> openai.AsyncOpenAI:
     global _client
     if _client is None:
-        _client = openai.AsyncOpenAI(api_key=OPENAI_API_KEY)
+        _client = openai.AsyncOpenAI(
+            api_key=OPENAI_API_KEY,
+            timeout=60.0,  # 60 second timeout to prevent indefinite hanging
+        )
     return _client
 
 # ------------------------------------------------------------------
@@ -134,9 +137,9 @@ async def generate_summary(
         )
         summary = response.choices[0].message.content.strip()
     except Exception as exc:
-        logger.error("OpenAI API call failed: %s", exc)
+        logger.error("OpenAI API call failed for report %s: [%s] %s", report_id, type(exc).__name__, exc)
         summary = (
-            "We were unable to generate a simplified summary at this time. "
+            "Error: We were unable to generate a simplified summary at this time. "
             "Please try again later or consult your healthcare provider directly."
         )
 

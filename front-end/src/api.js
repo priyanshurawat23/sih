@@ -3,6 +3,24 @@
 
 import { Platform } from 'react-native';
 
+const FETCH_TIMEOUT_MS = 90000; // 90 seconds (Render free tier cold starts can take ~50s)
+
+const fetchWithTimeout = (url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal })
+    .then((res) => { clearTimeout(timer); return res; })
+    .catch((err) => {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        throw new TypeError(
+          'Request timed out. The backend server may not be running.'
+        );
+      }
+      throw err;
+    });
+};
+
 const getBaseUrl = () => {
   if (typeof process !== 'undefined' && process.env) {
     const envUrl =
@@ -70,7 +88,7 @@ export const uploadReport = async (fileData, fileName, fileType = 'application/p
       });
     }
 
-    const response = await fetch(`${BASE_URL}/api/upload?language=${language}`, {
+    const response = await fetchWithTimeout(`${BASE_URL}/api/upload?language=${language}`, {
       method: 'POST',
       body: formData,
       // Note: Do NOT set 'Content-Type': 'multipart/form-data'.
@@ -100,7 +118,7 @@ export const uploadReport = async (fileData, fileName, fileType = 'application/p
 
 export const getHistory = async (userId = 1) => {
   try {
-    const response = await fetch(`${BASE_URL}/api/history/${userId}`);
+    const response = await fetchWithTimeout(`${BASE_URL}/api/history/${userId}`);
     if (!response.ok) {
       throw new Error(`History fetch failed with status ${response.status}`);
     }
@@ -112,7 +130,7 @@ export const getHistory = async (userId = 1) => {
 
 export const getReport = async (reportId) => {
   try {
-    const response = await fetch(`${BASE_URL}/api/report/${reportId}`);
+    const response = await fetchWithTimeout(`${BASE_URL}/api/report/${reportId}`);
     if (!response.ok) {
       throw new Error(`Report fetch failed with status ${response.status}`);
     }
@@ -124,7 +142,7 @@ export const getReport = async (reportId) => {
 
 export const getHealth = async () => {
   try {
-    const response = await fetch(`${BASE_URL}/health`);
+    const response = await fetchWithTimeout(`${BASE_URL}/health`);
     if (!response.ok) {
       throw new Error(`Health check failed with status ${response.status}`);
     }
